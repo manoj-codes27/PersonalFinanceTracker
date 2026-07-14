@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personal Expense Tracker</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- Tailwind CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          display: ['Fraunces', 'serif'],
+          sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+          mono: ['IBM Plex Mono', 'ui-monospace', 'monospace'],
+        },
+        colors: {
+          ink: {
+            50: '#eef1f6', 100: '#dbe1ea', 200: '#b7c3d6', 300: '#8fa0bd',
+            400: '#5f7699', 500: '#3f5678', 600: '#2c4060', 700: '#1F2A44',
+            800: '#161d30', 900: '#0d1220'
+          },
+          brass: {
+            50: '#faf6ec', 100: '#f2e8cf', 200: '#e4cf9c', 300: '#d3b26a',
+            400: '#c39a48', 500: '#A8763E', 600: '#8c5f30', 700: '#6f4a26'
+          }
+        },
+        keyframes: {
+          fadeInUp: {
+            '0%': { opacity: '0', transform: 'translateY(6px)' },
+            '100%': { opacity: '1', transform: 'translateY(0)' }
+          },
+          popIn: {
+            '0%': { opacity: '0', transform: 'scale(0.96)' },
+            '100%': { opacity: '1', transform: 'scale(1)' }
+          }
+        },
+        animation: {
+          fadeInUp: 'fadeInUp 0.35s ease-out both',
+          popIn: 'popIn 0.18s ease-out both'
+        }
+      }
+    }
+  }
+</script>
+
+<style>
+  html { scroll-behavior: smooth; }
+  body { font-feature-settings: "tnum" 1; }
+
+  /* Custom scrollbar for the ledger list */
+  .ledger-scroll::-webkit-scrollbar { width: 8px; }
+  .ledger-scroll::-webkit-scrollbar-track { background: transparent; }
+  .ledger-scroll::-webkit-scrollbar-thumb { background-color: #d6d3d1; border-radius: 999px; }
+  .ledger-scroll::-webkit-scrollbar-thumb:hover { background-color: #a8a29e; }
+
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  /* Segmented control thumb */
+  #type-toggle-thumb { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+
+  input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible {
+    outline: 2px solid #A8763E;
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+</style>
+</head>
+
+<body class="bg-zinc-50 text-ink-900 font-sans antialiased min-h-screen">
+
+<div id="toast-container" class="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 items-end"></div>
+
+<!-- ============ Confirmation Modal ============ -->
+<div id="confirm-modal" class="fixed inset-0 z-[90] hidden items-center justify-center bg-ink-900/50 backdrop-blur-sm p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-popIn">
+    <div id="confirm-icon-wrap" class="w-11 h-11 rounded-full flex items-center justify-center mb-4 bg-rose-50 text-rose-600">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>
+    </div>
+    <h3 id="confirm-title" class="font-display text-lg font-semibold text-ink-800">Are you sure?</h3>
+    <p id="confirm-message" class="text-sm text-ink-500 mt-1.5 leading-relaxed">This action cannot be undone.</p>
+    <div class="flex gap-3 justify-end mt-6">
+      <button id="confirm-cancel" class="px-4 py-2 rounded-lg text-sm font-medium text-ink-600 hover:bg-zinc-100 transition-all duration-200">Cancel</button>
+      <button id="confirm-ok" class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 transition-all duration-200 shadow-sm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+
+  <!-- ============ Header ============ -->
+  <header class="flex items-end justify-between mb-8 sm:mb-10">
+    <div>
+      <p class="text-xs font-semibold tracking-[0.2em] text-brass-600 uppercase mb-1">Personal Finance Tracker</p>
+      <h1 class="font-display text-3xl sm:text-4xl font-semibold text-ink-800 tracking-tight">PersnolFinance</h1>
+    </div>
+    <p id="today-date" class="hidden sm:block text-sm text-ink-400 font-mono tabular"></p>
+  </header>
+
+  <!-- ============ Summary Cards ============ -->
+  <section class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+    <div class="bg-ink-800 rounded-2xl shadow-md p-5 sm:p-6 relative overflow-hidden">
+      <div class="absolute -right-6 -top-6 w-24 h-24 rounded-full bg-white/5"></div>
+      <p class="text-xs font-medium uppercase tracking-wider text-ink-300 mb-2">Current Balance</p>
+      <p id="balance-amount" class="font-display text-3xl font-semibold tabular tracking-tight">₹0.00</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-zinc-100 p-5 sm:p-6">
+      <p class="text-xs font-medium uppercase tracking-wider text-ink-400 mb-2">Total Income</p>
+      <p id="income-amount" class="font-display text-3xl font-semibold tabular tracking-tight text-emerald-600">₹0.00</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-zinc-100 p-5 sm:p-6">
+      <p class="text-xs font-medium uppercase tracking-wider text-ink-400 mb-2">Total Expense</p>
+      <p id="expense-amount" class="font-display text-3xl font-semibold tabular tracking-tight text-rose-600">₹0.00</p>
+    </div>
+  </section>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- ============ Left Column ============ -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+
+      <!-- Add Transaction -->
+      <section class="bg-white rounded-2xl shadow-sm border border-zinc-100 p-5 sm:p-6">
+        <h2 class="font-display text-lg font-semibold text-ink-800 mb-4">Add a transaction</h2>
+
+        <!-- Segmented Type Toggle -->
+        <div class="relative bg-zinc-100 rounded-xl p-1 flex mb-5 max-w-xs" role="radiogroup" aria-label="Transaction type">
+          <div id="type-toggle-thumb" class="absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] bg-white rounded-lg shadow-sm"></div>
+          <button type="button" data-type="expense" class="type-toggle-btn relative z-10 flex-1 py-2 text-sm font-medium rounded-lg transition-colors duration-200 text-rose-600" aria-checked="true" role="radio">Expense</button>
+          <button type="button" data-type="income" class="type-toggle-btn relative z-10 flex-1 py-2 text-sm font-medium rounded-lg transition-colors duration-200 text-ink-400" aria-checked="false" role="radio">Income</button>
+        </div>
+
+        <form id="transaction-form" novalidate>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="sm:col-span-2">
+              <label for="input-title" class="block text-xs font-medium text-ink-500 mb-1.5">Description</label>
+              <input type="text" id="input-title" name="title" placeholder="e.g. Groceries at the market" autocomplete="off"
+                class="w-full rounded-lg border border-zinc-200 px-3.5 py-2.5 text-sm text-ink-800 placeholder:text-zinc-400 focus:border-brass-400 focus:ring-1 focus:ring-brass-400 transition-all duration-200">
+              <p class="error-text hidden text-xs text-rose-600 mt-1" data-error-for="title">Please enter a description.</p>
+            </div>
+
+            <div>
+              <label for="input-amount" class="block text-xs font-medium text-ink-500 mb-1.5">Amount</label>
+              <div class="relative">
+                <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">₹</span>
+                <input type="number" id="input-amount" name="amount" placeholder="0.00" min="0.01" step="0.01"
+                  class="w-full rounded-lg border border-zinc-200 pl-7 pr-3.5 py-2.5 text-sm text-ink-800 font-mono placeholder:text-zinc-400 focus:border-brass-400 focus:ring-1 focus:ring-brass-400 transition-all duration-200">
+              </div>
+              <p class="error-text hidden text-xs text-rose-600 mt-1" data-error-for="amount">Enter an amount greater than 0.</p>
+            </div>
+
+            <div>
+              <label for="input-date" class="block text-xs font-medium text-ink-500 mb-1.5">Date</label>
+              <input type="date" id="input-date" name="date"
+                class="w-full rounded-lg border border-zinc-200 px-3.5 py-2.5 text-sm text-ink-800 focus:border-brass-400 focus:ring-1 focus:ring-brass-400 transition-all duration-200">
+              <p class="error-text hidden text-xs text-rose-600 mt-1" data-error-for="date">Please choose a valid date.</p>
+            </div>
+
+            <div class="sm:col-span-2">
+              <label for="input-category" class="block text-xs font-medium text-ink-500 mb-1.5">Category</label>
+              <select id="input-category" name="category"
+                class="w-full rounded-lg border border-zinc-200 px-3.5 py-2.5 text-sm text-ink-800 bg-white focus:border-brass-400 focus:ring-1 focus:ring-brass-400 transition-all duration-200">
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" class="mt-5 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-ink-800 hover:bg-ink-700 text-white text-sm font-medium px-5 py-2.5 transition-all duration-200 shadow-sm active:scale-[0.98]">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Add transaction
+          </button>
+        </form>
+      </section>
+
+      <!-- Transaction History -->
+      <section class="bg-white rounded-2xl shadow-sm border border-zinc-100 p-5 sm:p-6 flex flex-col">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <h2 class="font-display text-lg font-semibold text-ink-800">Transaction history</h2>
+          <span id="tx-count" class="text-xs text-ink-400 font-mono"></span>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-3 mb-4">
+          <div class="relative flex-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" id="search-input" placeholder="Search by title…"
+              class="w-full rounded-lg border border-zinc-200 pl-9 pr-3.5 py-2.5 text-sm text-ink-800 placeholder:text-zinc-400 focus:border-brass-400 focus:ring-1 focus:ring-brass-400 transition-all duration-200">
+          </div>
+          <select id="category-filter"
+            class="rounded-lg border border-zinc-200 px-3.5 py-2.5 text-sm text-ink-800 bg-white focus:border-brass-400 focus:ring-1 focus:ring-brass-400 transition-all duration-200 sm:w-48">
+            <option value="all">All categories</option>
+          </select>
+        </div>
+
+        <div id="tx-list" class="ledger-scroll flex flex-col gap-2 max-h-[520px] overflow-y-auto pr-1"></div>
+
+        <!-- Empty state -->
+        <div id="empty-state" class="hidden flex-col items-center justify-center text-center py-12 px-6">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-14 h-14 text-zinc-300 mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
+          <p class="font-display text-base font-medium text-ink-700">Your ledger is empty</p>
+          <p class="text-sm text-ink-400 mt-1 max-w-xs">Add your first transaction above to start tracking where your money comes from and goes to.</p>
+        </div>
+
+        <!-- No results state -->
+        <div id="no-results-state" class="hidden flex-col items-center justify-center text-center py-12 px-6">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-12 h-12 text-zinc-300 mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <p class="text-sm font-medium text-ink-600">No matching transactions</p>
+          <p class="text-xs text-ink-400 mt-1">Try a different search term or category.</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ Right Column ============ -->
+    <div class="flex flex-col gap-6">
+
+      <!-- Analytics -->
+      <section class="bg-white rounded-2xl shadow-sm border border-zinc-100 p-5 sm:p-6">
+        <h2 class="font-display text-lg font-semibold text-ink-800 mb-1">Where it goes</h2>
+        <p class="text-xs text-ink-400 mb-5">Expense breakdown by category</p>
+
+        <div id="chart-wrap" class="flex flex-col items-center">
+          <div class="relative w-44 h-44 mb-2">
+            <svg id="donut-chart" viewBox="0 0 160 160" class="w-full h-full -rotate-90"></svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <p class="text-[10px] uppercase tracking-wider text-ink-400">Spent</p>
+              <p id="donut-center-amount" class="font-display text-lg font-semibold text-ink-800 tabular">₹0.00</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="chart-legend" class="flex flex-col gap-3 mt-4"></div>
+
+        <div id="chart-empty" class="hidden text-center py-6">
+          <p class="text-sm text-ink-400">No expenses yet — add one to see your breakdown.</p>
+        </div>
+      </section>
+
+      <!-- Data Management -->
+      <section class="bg-white rounded-2xl shadow-sm border border-zinc-100 p-5 sm:p-6">
+        <h2 class="font-display text-lg font-semibold text-ink-800 mb-1">Data control</h2>
+        <p class="text-xs text-ink-400 mb-5">Everything is stored locally in your browser.</p>
+
+        <div class="flex flex-col gap-2.5">
+          <button id="export-btn" class="flex items-center gap-2.5 w-full text-left rounded-lg border border-zinc-200 px-3.5 py-2.5 text-sm font-medium text-ink-700 hover:bg-zinc-50 hover:border-zinc-300 transition-all duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Export data as JSON
+          </button>
+
+          <label for="import-input" class="flex items-center gap-2.5 w-full text-left rounded-lg border border-zinc-200 px-3.5 py-2.5 text-sm font-medium text-ink-700 hover:bg-zinc-50 hover:border-zinc-300 transition-all duration-200 cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-ink-500 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Import JSON backup
+          </label>
+          <input type="file" id="import-input" accept="application/json" class="hidden">
+
+          <button id="clear-btn" class="flex items-center gap-2.5 w-full text-left rounded-lg border border-rose-100 bg-rose-50/60 px-3.5 py-2.5 text-sm font-medium text-rose-600 hover:bg-rose-50 hover:border-rose-200 transition-all duration-200 mt-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>
+            Clear all data
+          </button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer class="text-center text-xs text-ink-300 mt-10">
+    Built with vanilla JS · Data never leaves your browser
+  </footer>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* =========================================================
+     CATEGORY METADATA
+  ========================================================= */
+  const CATEGORIES = {
+    expense: [
+      { id: 'food',          label: 'Food & Dining',    color: '#B45309' },
+      { id: 'transport',     label: 'Transport',        color: '#0F766E' },
+      { id: 'shopping',      label: 'Shopping',         color: '#7C3AED' },
+      { id: 'bills',         label: 'Bills & Utilities',color: '#B91C1C' },
+      { id: 'entertainment', label: 'Entertainment',    color: '#C2410C' },
+      { id: 'health',        label: 'Health',           color: '#0369A1' },
+      { id: 'education',     label: 'Education',        color: '#4338CA' },
+      { id: 'other_expense', label: 'Other',            color: '#57534E' },
+    ],
+    income: [
+      { id: 'salary',       label: 'Salary',        color: '#15803D' },
+      { id: 'freelance',    label: 'Freelance',     color: '#0D9488' },
+      { id: 'investment',   label: 'Investment',    color: '#A16207' },
+      { id: 'gift',         label: 'Gift',          color: '#BE185D' },
+      { id: 'other_income', label: 'Other',         color: '#3F6212' },
+    ]
+  };
+  const ALL_CATEGORIES = [...CATEGORIES.expense, ...CATEGORIES.income];
+  function getCategoryMeta(id) {
+    return ALL_CATEGORIES.find(c => c.id === id) || { id, label: id, color: '#71717a' };
+  }
+
+  /* =========================================================
+     STATE MANAGEMENT
+  ========================================================= */
+  const STORAGE_KEY = 'ledger_tracker_data_v1';
+
+  let state = { transactions: [] };
+  let filters = { search: '', category: 'all' };
+  let formType = 'expense';
+
+  /* =========================================================
+     LOCALSTORAGE HELPERS
+  ========================================================= */
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return { transactions: [] };
+      const parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.transactions)) throw new Error('Unexpected data shape');
+      return { transactions: parsed.transactions };
+    } catch (err) {
+      console.warn('Ledger: stored data was corrupted, starting fresh.', err);
+      return { transactions: [] };
+    }
+  }
+
+  function saveData() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (err) {
+      console.error('Ledger: failed to save data.', err);
+      toast('Could not save — your browser storage may be full.', 'error');
+    }
+  }
+
+  function validateImportedShape(data) {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.transactions)) return false;
+    return data.transactions.every(t =>
+      t && typeof t === 'object' &&
+      (typeof t.title === 'string' && t.title.trim() !== '') &&
+      typeof t.amount === 'number' && Number.isFinite(t.amount) &&
+      typeof t.category === 'string' &&
+      typeof t.date === 'string' &&
+      (t.type === 'income' || t.type === 'expense')
+    );
+  }
+
+  /* =========================================================
+     UTILITIES
+  ========================================================= */
+  function uid() {
+    return (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  }
+
+  function formatCurrency(amount) {
+    const sign = amount < 0 ? '-' : '+';
+    const formatted = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Math.abs(amount));
+    return `${sign}${formatted}`;
+  }
+
+  function formatPlainCurrency(amount) {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+  }
+
+  function formatDate(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function toast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    const colors = {
+      success: 'bg-ink-800 text-white',
+      error: 'bg-rose-600 text-white',
+    };
+    const el = document.createElement('div');
+    el.className = `${colors[type] || colors.success} text-sm font-medium px-4 py-2.5 rounded-lg shadow-lg animate-popIn max-w-xs`;
+    el.textContent = message;
+    container.appendChild(el);
+    setTimeout(() => {
+      el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(4px)';
+      setTimeout(() => el.remove(), 300);
+    }, 2600);
+  }
+
+  /* Promise-based confirmation modal */
+  function showConfirm({ title, message, confirmLabel = 'Confirm' }) {
+    const modal = document.getElementById('confirm-modal');
+    const titleEl = document.getElementById('confirm-title');
+    const msgEl = document.getElementById('confirm-message');
+    const okBtn = document.getElementById('confirm-ok');
+    const cancelBtn = document.getElementById('confirm-cancel');
+
+    titleEl.textContent = title;
+    msgEl.textContent = message;
+    okBtn.textContent = confirmLabel;
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    return new Promise((resolve) => {
+      function cleanup(result) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        modal.removeEventListener('click', onBackdrop);
+        resolve(result);
+      }
+      function onOk() { cleanup(true); }
+      function onCancel() { cleanup(false); }
+      function onBackdrop(e) { if (e.target === modal) cleanup(false); }
+
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+      modal.addEventListener('click', onBackdrop);
+    });
+  }
+
+  /* =========================================================
+     COMPUTATIONS
+  ========================================================= */
+  function computeTotals(transactions) {
+    let income = 0, expense = 0;
+    for (const t of transactions) {
+      if (t.amount >= 0) income += t.amount;
+      else expense += Math.abs(t.amount);
+    }
+    return { income, expense, balance: income - expense };
+  }
+
+  function computeCategoryBreakdown(transactions) {
+    const expenses = transactions.filter(t => t.amount < 0);
+    const total = expenses.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const byCategory = {};
+    for (const t of expenses) {
+      byCategory[t.category] = (byCategory[t.category] || 0) + Math.abs(t.amount);
+    }
+    const rows = Object.entries(byCategory)
+      .map(([category, amount]) => ({
+        category,
+        amount,
+        percent: total > 0 ? (amount / total) * 100 : 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+    return { total, rows };
+  }
+
+  function getFilteredTransactions() {
+    return state.transactions
+      .filter(t => {
+        const matchesSearch = t.title.toLowerCase().includes(filters.search.toLowerCase());
+        const matchesCategory = filters.category === 'all' || t.category === filters.category;
+        return matchesSearch && matchesCategory;
+      })
+      .sort((a, b) => new Date(b.date) - new Date(a.date) || b.createdAt - a.createdAt);
+  }
+
+  /* =========================================================
+     UI RENDERERS
+  ========================================================= */
+  function renderSummary() {
+    const { income, expense, balance } = computeTotals(state.transactions);
+    const balanceEl = document.getElementById('balance-amount');
+    balanceEl.textContent = formatPlainCurrency(balance);
+    balanceEl.classList.toggle('text-rose-400', balance < 0);
+    balanceEl.classList.toggle('text-white', balance >= 0);
+
+    document.getElementById('income-amount').textContent = formatPlainCurrency(income);
+    document.getElementById('expense-amount').textContent = formatPlainCurrency(expense);
+  }
+
+  function renderCategoryOptions() {
+    const select = document.getElementById('input-category');
+    const list = CATEGORIES[formType];
+    select.innerHTML = list.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
+  }
+
+  function renderCategoryFilterOptions() {
+    const select = document.getElementById('category-filter');
+    const current = select.value || 'all';
+    const options = ['<option value="all">All categories</option>']
+      .concat(ALL_CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`));
+    select.innerHTML = options.join('');
+    select.value = current;
+  }
+
+  function renderTransactionList() {
+    const listEl = document.getElementById('tx-list');
+    const emptyEl = document.getElementById('empty-state');
+    const noResultsEl = document.getElementById('no-results-state');
+    const countEl = document.getElementById('tx-count');
+
+    const filtered = getFilteredTransactions();
+    countEl.textContent = state.transactions.length
+      ? `${state.transactions.length} total`
+      : '';
+
+    if (state.transactions.length === 0) {
+      listEl.innerHTML = '';
+      listEl.classList.add('hidden');
+      noResultsEl.classList.add('hidden');
+      noResultsEl.classList.remove('flex');
+      emptyEl.classList.remove('hidden');
+      emptyEl.classList.add('flex');
+      return;
+    }
+    emptyEl.classList.add('hidden');
+    emptyEl.classList.remove('flex');
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = '';
+      listEl.classList.add('hidden');
+      noResultsEl.classList.remove('hidden');
+      noResultsEl.classList.add('flex');
+      return;
+    }
+    noResultsEl.classList.add('hidden');
+    noResultsEl.classList.remove('flex');
+    listEl.classList.remove('hidden');
+
+    listEl.innerHTML = filtered.map((t, i) => {
+      const meta = getCategoryMeta(t.category);
+      const isIncome = t.amount >= 0;
+      return `
+        <div class="group flex items-center gap-3 rounded-xl border border-zinc-100 hover:border-zinc-200 hover:bg-zinc-50/60 px-3.5 py-3 transition-all duration-200 animate-fadeInUp" style="animation-delay:${Math.min(i, 12) * 25}ms" data-id="${t.id}">
+          <div class="w-2 h-2 rounded-full shrink-0" style="background-color:${meta.color}"></div>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium text-ink-800 truncate">${escapeHtml(t.title)}</p>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span class="text-xs text-ink-400 font-mono">${formatDate(t.date)}</span>
+              <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style="background-color:${meta.color}1A; color:${meta.color}">${meta.label}</span>
+            </div>
+          </div>
+          <p class="text-sm font-semibold font-mono tabular shrink-0 ${isIncome ? 'text-emerald-600' : 'text-rose-600'}">${formatCurrency(t.amount)}</p>
+          <button class="delete-btn shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-zinc-300 hover:text-rose-600 hover:bg-rose-50 transition-all duration-200 opacity-0 group-hover:opacity-100" data-id="${t.id}" aria-label="Delete transaction">
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z"/></svg>
+          </button>
+        </div>`;
+    }).join('');
+  }
+
+  function renderChart() {
+    const { total, rows } = computeCategoryBreakdown(state.transactions);
+    const svg = document.getElementById('donut-chart');
+    const legend = document.getElementById('chart-legend');
+    const centerAmount = document.getElementById('donut-center-amount');
+    const emptyEl = document.getElementById('chart-empty');
+    const chartWrap = document.getElementById('chart-wrap');
+
+    centerAmount.textContent = formatPlainCurrency(total);
+
+    if (total === 0) {
+      svg.innerHTML = `<circle cx="80" cy="80" r="64" fill="none" stroke="#f1f5f9" stroke-width="20"/>`;
+      legend.innerHTML = '';
+      emptyEl.classList.remove('hidden');
+      chartWrap.classList.add('opacity-40');
+      return;
+    }
+    emptyEl.classList.add('hidden');
+    chartWrap.classList.remove('opacity-40');
+
+    const r = 64;
+    const circumference = 2 * Math.PI * r;
+    let cumulative = 0;
+
+    const segments = rows.map(row => {
+      const dash = (row.percent / 100) * circumference;
+      const gap = circumference - dash;
+      const offset = -((cumulative / 100) * circumference);
+      cumulative += row.percent;
+      const meta = getCategoryMeta(row.category);
+      return `<circle cx="80" cy="80" r="${r}" fill="none" stroke="${meta.color}" stroke-width="20"
+                stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${offset}"
+                stroke-linecap="butt" style="transition: stroke-dasharray 0.4s ease"/>`;
+    }).join('');
+
+    svg.innerHTML = `<circle cx="80" cy="80" r="${r}" fill="none" stroke="#f1f5f9" stroke-width="20"/>${segments}`;
+
+    legend.innerHTML = rows.map(row => {
+      const meta = getCategoryMeta(row.category);
+      return `
+        <div>
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="flex items-center gap-1.5 font-medium text-ink-600">
+              <span class="w-2 h-2 rounded-full" style="background-color:${meta.color}"></span>
+              ${meta.label}
+            </span>
+            <span class="font-mono text-ink-400">${row.percent.toFixed(0)}% · ${formatPlainCurrency(row.amount)}</span>
+          </div>
+          <div class="h-1.5 rounded-full bg-zinc-100 overflow-hidden">
+            <div class="h-full rounded-full" style="width:${row.percent}%; background-color:${meta.color}; transition: width 0.4s ease"></div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function renderAll() {
+    renderSummary();
+    renderTransactionList();
+    renderChart();
+    renderCategoryFilterOptions();
+  }
+
+  /* =========================================================
+     FORM: TYPE TOGGLE
+  ========================================================= */
+  function setFormType(type) {
+    formType = type;
+    const thumb = document.getElementById('type-toggle-thumb');
+    const buttons = document.querySelectorAll('.type-toggle-btn');
+
+    thumb.style.transform = type === 'income' ? 'translateX(100%)' : 'translateX(0)';
+
+    buttons.forEach(btn => {
+      const active = btn.dataset.type === type;
+      btn.setAttribute('aria-checked', String(active));
+      btn.classList.toggle('text-emerald-600', active && type === 'income');
+      btn.classList.toggle('text-rose-600', active && type === 'expense');
+      btn.classList.toggle('text-ink-400', !active);
+    });
+
+    renderCategoryOptions();
+  }
+
+  /* =========================================================
+     FORM: VALIDATION + SUBMIT
+  ========================================================= */
+  function clearErrors() {
+    document.querySelectorAll('.error-text').forEach(el => el.classList.add('hidden'));
+    ['input-title', 'input-amount', 'input-date'].forEach(id => {
+      document.getElementById(id).classList.remove('border-rose-400', 'ring-1', 'ring-rose-400');
+    });
+  }
+
+  function showError(fieldId, inputId) {
+    const errorEl = document.querySelector(`[data-error-for="${fieldId}"]`);
+    if (errorEl) errorEl.classList.remove('hidden');
+    document.getElementById(inputId).classList.add('border-rose-400', 'ring-1', 'ring-rose-400');
+  }
+
+  function handleFormSubmit(e) {
+    e.preventDefault();
+    clearErrors();
+
+    const titleInput = document.getElementById('input-title');
+    const amountInput = document.getElementById('input-amount');
+    const dateInput = document.getElementById('input-date');
+    const categoryInput = document.getElementById('input-category');
+
+    const title = titleInput.value.trim();
+    const amountRaw = parseFloat(amountInput.value);
+    const date = dateInput.value;
+
+    let valid = true;
+    if (title === '') { showError('title', 'input-title'); valid = false; }
+    if (!Number.isFinite(amountRaw) || amountRaw <= 0) { showError('amount', 'input-amount'); valid = false; }
+    if (date === '' || isNaN(new Date(date).getTime())) { showError('date', 'input-date'); valid = false; }
+    if (!valid) return;
+
+    const signedAmount = formType === 'expense' ? -Math.abs(amountRaw) : Math.abs(amountRaw);
+
+    state.transactions.push({
+      id: uid(),
+      title,
+      amount: signedAmount,
+      category: categoryInput.value,
+      date,
+      type: formType,
+      createdAt: Date.now(),
+    });
+
+    saveData();
+    renderAll();
+    toast(formType === 'expense' ? 'Expense added.' : 'Income added.');
+
+    e.target.reset();
+    setFormType(formType);
+    dateInput.value = date;
+    titleInput.focus();
+  }
+
+  /* =========================================================
+     TRANSACTION LIST: DELETE (event delegation)
+  ========================================================= */
+  function handleListClick(e) {
+    const btn = e.target.closest('.delete-btn');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const tx = state.transactions.find(t => t.id === id);
+    if (!tx) return;
+
+    showConfirm({
+      title: 'Delete this transaction?',
+      message: `"${tx.title}" (${formatCurrency(tx.amount)}) will be permanently removed.`,
+      confirmLabel: 'Delete',
+    }).then(confirmed => {
+      if (!confirmed) return;
+      state.transactions = state.transactions.filter(t => t.id !== id);
+      saveData();
+      renderAll();
+      toast('Transaction deleted.');
+    });
+  }
+
+  /* =========================================================
+     SEARCH + FILTER
+  ========================================================= */
+  function handleSearchInput(e) {
+    filters.search = e.target.value;
+    renderTransactionList();
+  }
+  function handleCategoryFilterChange(e) {
+    filters.category = e.target.value;
+    renderTransactionList();
+  }
+
+  /* =========================================================
+     DATA MANAGEMENT: EXPORT / IMPORT / CLEAR
+  ========================================================= */
+  function handleExport() {
+    if (state.transactions.length === 0) {
+      toast('There is no data to export yet.', 'error');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `ledger-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('Backup exported.');
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      let parsed;
+      try {
+        parsed = JSON.parse(reader.result);
+      } catch (err) {
+        toast('That file is not valid JSON.', 'error');
+        e.target.value = '';
+        return;
+      }
+      if (!validateImportedShape(parsed)) {
+        toast('That file doesn\'t match the expected backup format.', 'error');
+        e.target.value = '';
+        return;
+      }
+
+      const confirmed = await showConfirm({
+        title: 'Overwrite existing data?',
+        message: `This will replace your current ${state.transactions.length} transaction(s) with ${parsed.transactions.length} from the file.`,
+        confirmLabel: 'Import',
+      });
+      e.target.value = '';
+      if (!confirmed) return;
+
+      state.transactions = parsed.transactions.map(t => ({
+        id: t.id || uid(),
+        title: String(t.title),
+        amount: Number(t.amount),
+        category: String(t.category),
+        date: String(t.date),
+        type: t.type,
+        createdAt: t.createdAt || Date.now(),
+      }));
+      saveData();
+      renderAll();
+      toast('Backup imported successfully.');
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleClearAll() {
+    if (state.transactions.length === 0) {
+      toast('There is nothing to clear yet.', 'error');
+      return;
+    }
+    const firstPass = await showConfirm({
+      title: 'Clear all data?',
+      message: `This will permanently delete all ${state.transactions.length} transaction(s) stored in this browser.`,
+      confirmLabel: 'Continue',
+    });
+    if (!firstPass) return;
+
+    const secondPass = await showConfirm({
+      title: 'This cannot be undone',
+      message: 'Please confirm one more time that you want to erase everything.',
+      confirmLabel: 'Yes, erase everything',
+    });
+    if (!secondPass) return;
+
+    state.transactions = [];
+    saveData();
+    renderAll();
+    toast('All data cleared.');
+  }
+
+  /* =========================================================
+     INIT
+  ========================================================= */
+  function setDefaultDate() {
+    const dateInput = document.getElementById('input-date');
+    const today = new Date();
+    dateInput.value = today.toISOString().slice(0, 10);
+  }
+
+  function renderHeaderDate() {
+    const el = document.getElementById('today-date');
+    el.textContent = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function bindEvents() {
+    document.getElementById('transaction-form').addEventListener('submit', handleFormSubmit);
+    document.querySelectorAll('.type-toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => setFormType(btn.dataset.type));
+    });
+    document.getElementById('tx-list').addEventListener('click', handleListClick);
+    document.getElementById('search-input').addEventListener('input', handleSearchInput);
+    document.getElementById('category-filter').addEventListener('change', handleCategoryFilterChange);
+    document.getElementById('export-btn').addEventListener('click', handleExport);
+    document.getElementById('import-input').addEventListener('change', handleImportFile);
+    document.getElementById('clear-btn').addEventListener('click', handleClearAll);
+  }
+
+  function init() {
+    state = loadData();
+    renderHeaderDate();
+    setDefaultDate();
+    setFormType('expense');
+    bindEvents();
+    renderAll();
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
